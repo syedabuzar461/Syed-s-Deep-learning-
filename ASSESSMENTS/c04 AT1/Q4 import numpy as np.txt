@@ -1,0 +1,127 @@
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from sklearn.preprocessing import MinMaxScaler
+
+LOOKBACK = 60
+
+# Load stock data
+data = pd.read_csv("stock_data.csv")
+
+features = [
+    "Open",
+    "High",
+    "Low",
+    "Close",
+    "Volume"
+]
+
+values = data[features].values
+
+# Normalize data
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(values)
+
+# Create sequences
+X = []
+y = []
+
+for i in range(LOOKBACK, len(scaled_data)):
+
+    X.append(
+        scaled_data[i - LOOKBACK:i]
+    )
+
+    # Up = 1, Down = 0
+    if data["Close"].iloc[i] > data["Close"].iloc[i - 1]:
+        y.append(1)
+    else:
+        y.append(0)
+
+X = np.array(X)
+y = np.array(y)
+
+# Train-test split
+split = int(0.8 * len(X))
+
+X_train = X[:split]
+X_test = X[split:]
+
+y_train = y[:split]
+y_test = y[split:]
+
+# LSTM model
+model = models.Sequential([
+    layers.Input(
+        shape=(LOOKBACK, len(features))
+    ),
+
+    layers.LSTM(
+        128,
+        return_sequences=True
+    ),
+
+    layers.Dropout(0.3),
+
+    layers.LSTM(64),
+
+    layers.Dropout(0.3),
+
+    layers.Dense(
+        32,
+        activation="relu"
+    ),
+
+    layers.Dense(
+        1,
+        activation="sigmoid"
+    )
+])
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(
+        learning_rate=0.001
+    ),
+    loss="binary_crossentropy",
+    metrics=["accuracy"]
+)
+
+# BPTT is automatically performed by TensorFlow
+model.fit(
+    X_train,
+    y_train,
+    validation_data=(X_test, y_test),
+    epochs=30,
+    batch_size=32,
+    shuffle=False
+)
+
+# Evaluate
+loss, accuracy = model.evaluate(
+    X_test,
+    y_test
+)
+
+print("Test Accuracy:", accuracy)
+
+# Prediction
+predictions = model.predict(X_test)
+
+for i in range(10):
+    predicted = (
+        "UP" if predictions[i][0] > 0.5
+        else "DOWN"
+    )
+
+    actual = (
+        "UP" if y_test[i] == 1
+        else "DOWN"
+    )
+
+    print(
+        "Predicted:",
+        predicted,
+        "| Actual:",
+        actual
+    )

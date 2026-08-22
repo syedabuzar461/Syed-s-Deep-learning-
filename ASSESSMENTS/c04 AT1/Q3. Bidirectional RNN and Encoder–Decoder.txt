@@ -1,0 +1,122 @@
+import tensorflow as tf
+from tensorflow.keras import layers, Model
+
+SRC_VOCAB_SIZE = 10000
+TGT_VOCAB_SIZE = 12000
+EMBED_DIM = 256
+UNITS = 256
+MAX_LEN = 50
+
+# ---------------- ENCODER ----------------
+
+encoder_inputs = layers.Input(
+    shape=(MAX_LEN,),
+    name="encoder_input"
+)
+
+encoder_embedding = layers.Embedding(
+    SRC_VOCAB_SIZE,
+    EMBED_DIM,
+    mask_zero=True
+)(encoder_inputs)
+
+encoder = layers.Bidirectional(
+    layers.LSTM(
+        UNITS,
+        return_sequences=True,
+        return_state=True
+    )
+)
+
+encoder_outputs = encoder(
+    encoder_embedding
+)
+
+encoder_sequence = encoder_outputs[0]
+
+forward_h = encoder_outputs[1]
+forward_c = encoder_outputs[2]
+backward_h = encoder_outputs[3]
+backward_c = encoder_outputs[4]
+
+encoder_h = layers.Concatenate()([
+    forward_h,
+    backward_h
+])
+
+encoder_c = layers.Concatenate()([
+    forward_c,
+    backward_c
+])
+
+# ---------------- DECODER ----------------
+
+decoder_inputs = layers.Input(
+    shape=(MAX_LEN,),
+    name="decoder_input"
+)
+
+decoder_embedding = layers.Embedding(
+    TGT_VOCAB_SIZE,
+    EMBED_DIM,
+    mask_zero=True
+)(decoder_inputs)
+
+decoder_lstm = layers.LSTM(
+    UNITS * 2,
+    return_sequences=True,
+    return_state=True
+)
+
+decoder_outputs, _, _ = decoder_lstm(
+    decoder_embedding,
+    initial_state=[
+        encoder_h,
+        encoder_c
+    ]
+)
+
+# Attention
+attention = layers.MultiHeadAttention(
+    num_heads=4,
+    key_dim=64
+)
+
+context = attention(
+    query=decoder_outputs,
+    key=encoder_sequence,
+    value=encoder_sequence
+)
+
+combined = layers.Concatenate()([
+    decoder_outputs,
+    context
+])
+
+# Output vocabulary
+outputs = layers.Dense(
+    TGT_VOCAB_SIZE,
+    activation="softmax"
+)(combined)
+
+model = Model(
+    [encoder_inputs, decoder_inputs],
+    outputs
+)
+
+model.compile(
+    optimizer="adam",
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"]
+)
+
+model.summary()
+
+# Training:
+# model.fit(
+#     [source_data, decoder_input],
+#     decoder_target,
+#     epochs=20,
+#     batch_size=64,
+#     validation_split=0.1
+# )
